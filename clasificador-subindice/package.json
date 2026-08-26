@@ -1,0 +1,6 @@
+{
+  "name": "clasificador-subindice-sgde",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Clasificador de subíndice/clase de proceso para migración a SGDE, usando Gemini."
+}

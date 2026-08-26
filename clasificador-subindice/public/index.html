@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Clasificador de Subíndice — SGDE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #F7F4EE;
+    color: #1E2128;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 64px; }
+  .header { display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 8px; background: #6E2A2A;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    color: #F7F4EE; font-size: 20px;
+  }
+  h1 { font-family: 'Source Serif 4', Georgia, serif; font-size: 24px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .subtitle { font-size: 13px; color: #8A7F6E; margin: 2px 0 0; letter-spacing: 0.02em; }
+  .intro { font-size: 14.5px; color: #4A4640; line-height: 1.6; margin: 20px 0 32px; }
+  .drop-zone {
+    border: 2px dashed #C9BFAE; border-radius: 12px; background: #FFFEFB;
+    padding: 36px 24px; text-align: center; cursor: pointer; transition: all .2s ease;
+  }
+  .drop-zone.active { border-color: #6E2A2A; background: #F0E8DD; }
+  .drop-zone p { font-size: 14.5px; color: #4A4640; margin: 0; }
+  .file-name { display: flex; align-items: center; justify-content: center; gap: 10px; font-weight: 500; }
+  #fileInput { display: none; }
+  button {
+    margin-top: 16px; width: 100%; padding: 13px 20px; border-radius: 8px; border: none;
+    background: #6E2A2A; color: #F7F4EE; font-size: 14.5px; font-weight: 600; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit;
+  }
+  button:disabled { background: #D8D0C0; cursor: not-allowed; }
+  button.secondary {
+    background: transparent; border: 1px solid #C9BFAE; color: #4A4640; font-weight: 500; font-size: 13.5px;
+  }
+  .error-box {
+    margin-top: 16px; padding: 14px 16px; border-radius: 8px; background: #FBEAEA;
+    border: 1px solid #E3B8B8; color: #7A2E2E; font-size: 13.5px;
+  }
+  .result-card {
+    background: #FFFEFB; border: 1px solid #E5DDCC; border-radius: 12px; padding: 26px 28px; margin-top: 20px;
+  }
+  .badge { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 12.5px; font-weight: 600; color: #3C6E4A; letter-spacing: 0.04em; }
+  .label { font-size: 12px; color: #8A7F6E; margin: 0 0 4px; letter-spacing: 0.03em; }
+  .area-value { font-family: 'Source Serif 4', Georgia, serif; font-size: 16px; margin: 0 0 18px; }
+  .subindice-value { font-family: 'Source Serif 4', Georgia, serif; font-size: 19px; font-weight: 700; margin: 0 0 20px; color: #6E2A2A; line-height: 1.35; }
+  .explicacion { font-size: 14px; line-height: 1.65; color: #3A362F; margin: 0; }
+  .alt-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid #EEE6D6; }
+  .footer-note { font-size: 11.5px; color: #A89E8C; margin-top: 36px; line-height: 1.5; }
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid #F7F4EE; border-top-color: transparent;
+    border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div class="logo">⚖</div>
+    <div>
+      <h1>Clasificador de Subíndice</h1>
+      <p class="subtitle">MIGRACIÓN A SGDE · ANÁLISIS DE AUTOS JUDICIALES</p>
+    </div>
+  </div>
+
+  <p class="intro">
+    Sube el auto admisorio (u otro auto) del expediente en PDF. El sistema lo analiza y sugiere
+    el subíndice — clase de proceso — que corresponde según el listado oficial, con una breve justificación.
+  </p>
+
+  <div id="dropZone" class="drop-zone">
+    <input type="file" id="fileInput" accept="application/pdf" />
+    <p id="dropText">Arrastra el PDF aquí o haz clic para seleccionarlo</p>
+  </div>
+
+  <button id="analyzeBtn" disabled>Clasificar auto</button>
+
+  <div id="errorBox" style="display:none" class="error-box"></div>
+  <div id="resultBox" style="display:none"></div>
+
+  <p class="footer-note">
+    El resultado es una sugerencia basada en el análisis del texto del auto. Verifica siempre
+    la clasificación final antes de confirmarla en el SGDE.
+  </p>
+</div>
+
+<script>
+  const dropZone = document.getElementById('dropZone');
+  const fileInput = document.getElementById('fileInput');
+  const dropText = document.getElementById('dropText');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const errorBox = document.getElementById('errorBox');
+  const resultBox = document.getElementById('resultBox');
+
+  let selectedFile = null;
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('active'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('active'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('active');
+    handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+
+  function handleFile(file) {
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      showError('Por favor sube un archivo PDF.');
+      return;
+    }
+    selectedFile = file;
+    dropText.innerHTML = '<span class="file-name">📄 ' + file.name + '</span>';
+    analyzeBtn.disabled = false;
+    hideError();
+    resultBox.style.display = 'none';
+  }
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+  }
+  function hideError() {
+    errorBox.style.display = 'none';
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  analyzeBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    hideError();
+    resultBox.style.display = 'none';
+    analyzeBtn.disabled = true;
+    analyzeBtn.innerHTML = '<span class="spinner"></span> Analizando auto…';
+
+    try {
+      const base64Pdf = await fileToBase64(selectedFile);
+      const res = await fetch('/api/classify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64Pdf }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al analizar el documento.');
+      renderResult(data);
+    } catch (err) {
+      showError(err.message || 'Ocurrió un error al analizar el documento.');
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = 'Clasificar auto';
+    }
+  });
+
+  function renderResult(result) {
+    let html = '';
+    html += '<div class="result-card">';
+    html += '<div class="badge">✓ CLASIFICACIÓN — CONFIANZA ' + (result.confianza || '').toUpperCase() + '</div>';
+    html += '<p class="label">ÁREA</p>';
+    html += '<p class="area-value">' + escapeHtml(result.area) + '</p>';
+    html += '<p class="label">SUBÍNDICE / CLASE DE PROCESO</p>';
+    html += '<p class="subindice-value">' + escapeHtml(result.subindice) + '</p>';
+    html += '<p class="label">JUSTIFICACIÓN</p>';
+    html += '<p class="explicacion">' + escapeHtml(result.explicacion) + '</p>';
+    if (result.alternativa) {
+      html += '<div class="alt-block"><p class="label">POSIBLE ALTERNATIVA</p><p class="explicacion">' + escapeHtml(result.alternativa) + '</p></div>';
+    }
+    html += '</div>';
+    html += '<button class="secondary" onclick="location.reload()">↺ Clasificar otro auto</button>';
+    resultBox.innerHTML = html;
+    resultBox.style.display = 'block';
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+</script>
+</body>
+</html>
