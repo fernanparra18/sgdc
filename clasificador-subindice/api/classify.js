@@ -104,6 +104,48 @@ Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional, sin markdo
   "alternativa": "si la confianza es media o baja, nombre de un segundo subíndice posible; si no aplica, cadena vacía"
 }`;
 
+const GEMINI_MODEL = "gemini-3.8-flash";
+
+// Llama a Gemini y, si responde que está sobrecargado (503 / "high demand"),
+// espera un poco y reintenta, hasta maxRetries veces.
+async function callGeminiWithRetry(apiKey, body, maxRetries = 3) {
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= maxRetries; intento++) {
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    );
+
+    const data = await geminiRes.json();
+
+    if (!data.error) {
+      return data; // Éxito, devolvemos de una vez
+    }
+
+    ultimoError = data.error;
+
+    const esSobrecarga =
+      data.error.code === 503 ||
+      /overload|high demand|unavailable/i.test(data.error.message || "");
+
+    if (esSobrecarga && intento < maxRetries) {
+      const esperaMs = intento * 1500; // 1.5s, luego 3s, luego 4.5s...
+      await new Promise((resolve) => setTimeout(resolve, esperaMs));
+      continue; // reintenta
+    }
+
+    // No es error de sobrecarga, o ya se acabaron los intentos: salimos del loop
+    break;
+  }
+
+  return { error: ultimoError };
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método no permitido" });
@@ -120,31 +162,24 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en Vercel." });
     }
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { inline_data: { mime_type: "application/pdf", data: base64Pdf } },
-                { text: "Clasifica este auto judicial según las instrucciones. Responde solo con el JSON." },
-              ],
-            },
+    const body = {
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inline_data: { mime_type: "application/pdf", data: base64Pdf } },
+            { text: "Clasifica este auto judicial según las instrucciones. Responde solo con el JSON." },
           ],
-          generationConfig: {
-            responseMimeType: "application/json",
-            temperature: 0.2,
-          },
-        }),
-      }
-    );
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+    };
 
-    const data = await geminiRes.json();
+    const data = await callGeminiWithRetry(apiKey, body);
 
     if (data.error) {
       return res.status(500).json({ error: data.error.message || "Error de la API de Gemini." });
